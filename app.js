@@ -410,13 +410,15 @@ function startGL() {
     const stroke = new THREE.Mesh(sg, strokeMat); scene.add(stroke);
     const perSeg = (ACROSS - 1) * 6;
     const UP = new THREE.Vector3(0, 1, 0), TIP = new THREE.Vector3(0, -1.53, 0); let brushPress = 0;
-    function brushQuat(k, painting) {
-      const d = pts[Math.min(k + 2, SEGS)].clone().sub(pts[Math.max(k - 2, 0)]).normalize();
+    // continuous position on the stroke path (f = 0..SEGS, fractional) — no segment-to-segment jumps
+    function pathAt(f) { f = clamp(f, 0, SEGS); const i = Math.min(Math.floor(f), SEGS - 1), r = f - i; return pts[i].clone().lerp(pts[i + 1], r); }
+    function brushQuat(f) {
+      const d = pathAt(f + 12).sub(pathAt(f - 12)).setY(0).normalize(); // wide window = steady heading
       const yaw = new THREE.Quaternion().setFromAxisAngle(UP, Math.atan2(-d.x, -d.z)); // flat side of the brush across the stroke
       const axis = new THREE.Vector3().crossVectors(UP, d).normalize(); // lean the handle forward, bristles trail
-      const lean = new THREE.Quaternion().setFromAxisAngle(axis, .5 + (painting ? Math.sin(k * .35) * .04 : 0));
-      return lean.multiply(yaw);
+      return new THREE.Quaternion().setFromAxisAngle(axis, .5).multiply(yaw);
     }
+    const qSmooth = new THREE.Quaternion(); let smoothInit = false;
     const vid = $('#strokeVid'), stepL = $('#strokeStep'), bar = $('#strokeProg'), sec = watch($('#stroke'));
     // self-running timeline (seconds): open → travel → paint → lift → admire → film → reset
     const T_OPEN = [.5, 2.1], T_TRAV = [2.1, 3.0], T_PAINT = [3.0, 7.2], T_LIFT = [7.2, 8.1], T_FILM = [9.4, 17.6], CYCLE = 18.4;
@@ -430,19 +432,24 @@ function startGL() {
       const open = ease(segT(t, T_OPEN)), travel = ease(segT(t, T_TRAV)), paint = segT(t, T_PAINT), lift = ease(segT(t, T_LIFT));
       stepL.textContent = t < T_TRAV[0] ? 'OPEN' : t < T_LIFT[0] ? 'PAINT' : 'SHINE';
       // brush placement is anchored on the bristle tip, so paint always comes out exactly under the brush
+      const smooth = x => x * x * (3 - 2 * x);
+      const pu = smooth(paint), f = pu * SEGS;               // gentle start and finish of the stroke
       const capPos = home.clone(); capPos.y += open * 1.55;
-      const k = Math.min(Math.floor(paint * SEGS), SEGS);
-      const qOpen = new THREE.Quaternion().setFromAxisAngle(UP, open * Math.PI * 4);
-      const qStart = brushQuat(0, 0), qPaint = brushQuat(k, paint > 0 && paint < 1 ? 1 : 0);
-      let q = travel < 1 ? qOpen.clone().slerp(qStart, travel) : qPaint;
+      const qOpen = new THREE.Quaternion().setFromAxisAngle(UP, smooth(open) * Math.PI * 2);
+      const qStart = brushQuat(0);
+      let qT = travel < 1 ? qOpen.clone().slerp(qStart, travel) : brushQuat(f);
+      if (t > T_FILM[0]) qT = new THREE.Quaternion();
+      const k = 1 - Math.exp(-Math.min(dt, .05) * 9);         // frame-rate independent smoothing of the brush rotation
+      if (!smoothInit || t < .1) { qSmooth.copy(qT); smoothInit = true; } else qSmooth.slerp(qT, k);
       const tipAt = (p, qq) => p.clone().sub(TIP.clone().applyQuaternion(qq));
-      let pos = travel < 1 ? capPos.clone().lerp(tipAt(pts[0].clone().setY(.03), qStart), travel) : tipAt(pts[k].clone().setY(.03), q);
+      let pos = travel < 1 ? capPos.clone().lerp(tipAt(pathAt(0).setY(.03), qSmooth), travel) : tipAt(pathAt(f).setY(.03), qSmooth);
       if (lift > 0) pos.y += lift * 1.6;
       let press = travel >= 1 && lift === 0 && paint > 0 ? 1 : 0;
-      if (t > T_FILM[0]) { pos = home.clone(); q = new THREE.Quaternion(); press = 0; }
-      brushPress += (press - brushPress) * .2; b.brush.scale.set(1 + brushPress * .3, 1 - brushPress * .08, 1);
-      capRig.position.copy(pos); capRig.quaternion.copy(q);
-      const drawn = t > T_FILM[1] + .4 ? 0 : paint;
+      if (t > T_FILM[0]) { pos = home.clone(); press = 0; }
+      brushPress += (press - brushPress) * (1 - Math.exp(-Math.min(dt, .05) * 6)); b.brush.scale.set(1 + brushPress * .3, 1 - brushPress * .08, 1);
+      capRig.position.copy(pos); capRig.quaternion.copy(qSmooth);
+      const paintDrawn = pu;
+      const drawn = t > T_FILM[1] + .4 ? 0 : paintDrawn;
       sg.setDrawRange(0, Math.floor(drawn * SEGS) * perSeg);
       const showVid = t > T_FILM[0] && t < T_FILM[1];
       if (on && !vid.src) { vid.src = vid.dataset.src; vid.load(); }
