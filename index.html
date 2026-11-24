@@ -125,7 +125,7 @@ nav .bag{width:40px;height:40px;border-radius:50%;background:var(--ink);color:#f
 .stroke{height:900px;background:#F3EFE4}
 .stroke .stick{position:relative;height:100%;overflow:hidden}
 .stroke .paper{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%,#F8F5EC,#EDE7D9);}
-.stroke video{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity 1.2s}
+.stroke video{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity 1.2s;z-index:42} /* film sits above the 3D canvas (z 40) so it covers the 3D stroke while crossfading */
 .stroke video.on{opacity:1}
 #v-stroke{position:absolute;inset:0}
 .stroke .txt{position:absolute;left:100px;bottom:70px;z-index:45}
