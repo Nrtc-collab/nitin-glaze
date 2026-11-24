@@ -27,7 +27,7 @@ const seg = (p, a, b) => clamp((p - a) / (b - a));
 /* ---------- fit 1440 canvas to the screen ---------- */
 let Z = 1;
 function fit() {
-  Z = Math.min(1, window.innerWidth / 1440);
+  Z = window.innerWidth / 1440; // fills every screen width (scales up on wide monitors too)
   document.documentElement.style.setProperty('--z', Z);
   document.documentElement.style.setProperty('--vh', (window.innerHeight / Z) + 'px');
 }
